@@ -187,8 +187,9 @@ def convert_anthropic_content_to_openai(content: List[Dict[str, Any]]) -> tuple[
 def ensure_thinking_prefix(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Ensure every assistant message begins with a thinking block when reasoning is enabled.
 
-    This is required by Anthropic API when thinking is enabled - ALL assistant messages
-    must start with a thinking block, even those containing tool_use blocks.
+    When thinking is enabled, Anthropic requires all assistant messages to start with
+    a thinking block. For past messages that don't have one, we use redacted_thinking
+    since we cannot forge signed thinking blocks.
     """
     updated_messages: List[Dict[str, Any]] = []
 
@@ -201,9 +202,9 @@ def ensure_thinking_prefix(messages: List[Dict[str, Any]]) -> List[Dict[str, Any
         content = new_message.get("content")
 
         if isinstance(content, str):
-            # String content - wrap with thinking block
+            # String content - wrap with redacted thinking block
             blocks: List[Dict[str, Any]] = []
-            blocks.append({"type": "thinking", "thinking": ""})
+            blocks.append({"type": "redacted_thinking"})
             if content:
                 blocks.append({"type": "text", "text": content})
             new_message["content"] = blocks
@@ -215,23 +216,23 @@ def ensure_thinking_prefix(messages: List[Dict[str, Any]]) -> List[Dict[str, Any
                 first_type = first_block.get("type")
 
                 if first_type in ("thinking", "redacted_thinking"):
-                    # Already has thinking block at start - keep as is
+                    # Already has thinking/redacted_thinking block at start - keep as is
                     new_message["content"] = content
                 else:
-                    # Need to prepend thinking block
+                    # Need to prepend redacted_thinking block
                     # This includes cases where first block is tool_use
-                    new_content: List[Dict[str, Any]] = [{"type": "thinking", "thinking": ""}]
+                    new_content: List[Dict[str, Any]] = [{"type": "redacted_thinking"}]
                     new_content.extend(content)
                     new_message["content"] = new_content
         elif isinstance(content, list):
-            # Empty list - add thinking block
-            new_message["content"] = [{"type": "thinking", "thinking": ""}]
+            # Empty list - add redacted thinking block
+            new_message["content"] = [{"type": "redacted_thinking"}]
         elif isinstance(content, dict):
-            # Single dict (rare) - wrap with thinking block first
-            new_message["content"] = [{"type": "thinking", "thinking": ""}, content]
+            # Single dict (rare) - wrap with redacted thinking block first
+            new_message["content"] = [{"type": "redacted_thinking"}, content]
         else:
-            # Fallback - just add thinking block
-            new_message["content"] = [{"type": "thinking", "thinking": ""}]
+            # Fallback - just add redacted thinking block
+            new_message["content"] = [{"type": "redacted_thinking"}]
 
         updated_messages.append(new_message)
 
