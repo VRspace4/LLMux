@@ -315,7 +315,6 @@ async def convert_anthropic_stream_to_openai(
                                                     "id": call_state["id"],
                                                     "type": "function",
                                                     "function": {
-                                                        "name": call_state["name"],
                                                         "arguments": call_state["arguments"]
                                                     }
                                                 }
