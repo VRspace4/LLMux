@@ -169,6 +169,17 @@ def convert_openai_messages_to_anthropic(openai_messages: List[Dict[str, Any]]) 
             "content": [{"type": "text", "text": "."}]
         })
 
+    # CRITICAL: Handle system-only messages (no user/assistant messages)
+    # When Letta or other frameworks send only system role messages, Claude API
+    # requires at least one user message. Inject a trigger message that instructs
+    # the model to respond to the system message content.
+    if not anthropic_messages and system_message_blocks:
+        logger.debug("[MESSAGE_CONVERSION] System-only message detected, injecting user trigger message")
+        anthropic_messages.append({
+            "role": "user",
+            "content": [{"type": "text", "text": "[Respond to the system message above]"}]
+        })
+
     # CRITICAL: Remove trailing whitespace from final assistant message
     if anthropic_messages and anthropic_messages[-1]["role"] == "assistant":
         for content_block in anthropic_messages[-1]["content"]:
