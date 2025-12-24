@@ -18,6 +18,7 @@ from anthropic import (
 )
 from anthropic.thinking_keywords import process_thinking_keywords
 from proxy.thinking_storage import inject_thinking_blocks
+from proxy.handlers.request_handler import strip_thinking_blocks_from_messages
 from models.resolution import resolve_model_metadata
 from models.reasoning import REASONING_BUDGET_MAP
 from oauth import OAuthManager
@@ -98,6 +99,12 @@ async def anthropic_messages(request: AnthropicMessageRequest, raw_request: Requ
         # Inject stored thinking blocks from previous responses
         anthropic_request["messages"] = inject_thinking_blocks(anthropic_request["messages"])
         logger.debug(f"[{request_id}] Injected stored thinking blocks if available")
+    else:
+        # When thinking is disabled, strip any thinking blocks from messages
+        # This prevents "When thinking is disabled, an assistant message cannot contain thinking" errors
+        anthropic_request["messages"] = strip_thinking_blocks_from_messages(
+            anthropic_request["messages"], request_id
+        )
 
     # Sanitize request for Anthropic API constraints
     anthropic_request = sanitize_anthropic_request(anthropic_request)

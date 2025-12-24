@@ -2,7 +2,7 @@
 Request preparation and conversion logic.
 """
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from openai_compat import convert_openai_request_to_anthropic
 from anthropic import (
@@ -14,6 +14,61 @@ from anthropic.thinking_keywords import process_thinking_keywords
 from proxy.thinking_storage import inject_thinking_blocks
 
 logger = logging.getLogger(__name__)
+
+
+def strip_thinking_blocks_from_messages(messages: List[Dict[str, Any]], request_id: str = "") -> List[Dict[str, Any]]:
+    """
+    Strip thinking and redacted_thinking blocks from assistant messages.
+
+    This is necessary when thinking is disabled but messages contain thinking blocks
+    from previous responses (e.g., when switching models or disabling thinking).
+    Anthropic API rejects: "When thinking is disabled, an assistant message in the
+    final position cannot contain thinking"
+
+    Args:
+        messages: List of message dicts
+        request_id: Request ID for logging
+
+    Returns:
+        Messages with thinking blocks removed from assistant messages
+    """
+    updated_messages = []
+    stripped_count = 0
+
+    for message in messages:
+        if message.get("role") != "assistant":
+            updated_messages.append(message)
+            continue
+
+        content = message.get("content")
+
+        # If content is not a list, keep as-is (string content doesn't have thinking blocks)
+        if not isinstance(content, list):
+            updated_messages.append(message)
+            continue
+
+        # Filter out thinking blocks
+        filtered_content = []
+        for block in content:
+            if isinstance(block, dict):
+                block_type = block.get("type")
+                if block_type in ("thinking", "redacted_thinking"):
+                    stripped_count += 1
+                    continue
+            filtered_content.append(block)
+
+        if filtered_content != content:
+            # Content was modified, create new message
+            new_message = message.copy()
+            new_message["content"] = filtered_content
+            updated_messages.append(new_message)
+        else:
+            updated_messages.append(message)
+
+    if stripped_count > 0:
+        logger.info(f"[{request_id}] Stripped {stripped_count} thinking blocks from messages (thinking disabled)")
+
+    return updated_messages
 
 
 def prepare_anthropic_request(
@@ -85,6 +140,12 @@ def prepare_anthropic_request(
         # Inject stored thinking blocks from previous responses
         anthropic_request["messages"] = inject_thinking_blocks(anthropic_request["messages"])
         logger.debug(f"[{request_id}] Injected stored thinking blocks if available")
+    else:
+        # When thinking is disabled, strip any thinking blocks from messages
+        # This prevents "When thinking is disabled, an assistant message cannot contain thinking" errors
+        anthropic_request["messages"] = strip_thinking_blocks_from_messages(
+            anthropic_request["messages"], request_id
+        )
 
     # Sanitize request for Anthropic API constraints
     anthropic_request = sanitize_anthropic_request(anthropic_request)
